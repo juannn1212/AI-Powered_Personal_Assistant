@@ -26,6 +26,136 @@ const RegisterScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    scrollContent: {
+      flexGrow: 1,
+    },
+    headerGradient: {
+      paddingTop: 60,
+      paddingBottom: 40,
+      paddingHorizontal: 20,
+    },
+    headerContent: {
+      alignItems: 'center',
+    },
+    backButton: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      padding: 10,
+    },
+    logoContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+      elevation: 5,
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: 'bold',
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    subtitle: {
+      fontSize: 16,
+      textAlign: 'center',
+      opacity: 0.9,
+    },
+    formContainer: {
+      padding: 20,
+      flex: 1,
+    },
+    inputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 4,
+    },
+    inputIcon: {
+      marginRight: 12,
+    },
+    input: {
+      flex: 1,
+      fontSize: 16,
+      paddingVertical: 16,
+    },
+    passwordToggle: {
+      padding: 8,
+    },
+    registerButton: {
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginBottom: 20,
+      ...Platform.select({
+        ios: {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+        },
+        android: {
+          elevation: 4,
+        },
+      }),
+    },
+    registerButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    dividerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: 20,
+    },
+    divider: {
+      flex: 1,
+      height: 1,
+    },
+    dividerText: {
+      marginHorizontal: 16,
+      fontSize: 14,
+    },
+    loginButton: {
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: 'center',
+      borderWidth: 1,
+      marginBottom: 20,
+    },
+    loginButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    termsContainer: {
+      alignItems: 'center',
+    },
+    termsText: {
+      fontSize: 12,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    termsLink: {
+      fontWeight: '600',
+    },
+  });
+
   const handleRegister = async () => {
     if (!fullName || !email || !password || !confirmPassword) {
       Alert.alert('Error', 'Por favor completa todos los campos');
@@ -276,138 +406,5 @@ const RegisterScreen = ({ navigation }) => {
     </KeyboardAvoidingView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  headerGradient: {
-    paddingTop: 60,
-    paddingBottom: 40,
-    paddingHorizontal: 20,
-  },
-  headerContent: {
-    alignItems: 'center',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    padding: 8,
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    opacity: 0.9,
-  },
-  formContainer: {
-    padding: 20,
-    flex: 1,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    paddingVertical: 16,
-  },
-  passwordToggle: {
-    padding: 8,
-  },
-  registerButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  registerButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-  },
-  loginButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  termsContainer: {
-    alignItems: 'center',
-  },
-  termsText: {
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  termsLink: {
-    fontWeight: '600',
-  },
-});
 
 export default RegisterScreen;
