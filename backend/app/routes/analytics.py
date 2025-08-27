@@ -1,425 +1,390 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Optional, Dict
-from pydantic import BaseModel
+from sqlalchemy import func, and_, extract
+from typing import List, Dict, Any
 from datetime import datetime, date, timedelta
+import logging
 
-from app.database import get_db, User, UserAnalytics, Task, Habit
-from app.routes.auth import get_current_active_user
-from app.services.ml_service import MLService
+from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import get_current_user
+from app.models.task import Task
+from app.models.habit import Habit, HabitLog
+from app.services.ai_service import AIService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-ml_service = MLService()
+ai_service = AIService()
 
-# Pydantic models
-class AnalyticsData(BaseModel):
-    date: date
-    productivity_score: float
-    tasks_completed: int
-    habits_completed: int
-    time_spent_focused: float
-    mood_score: float
-
-class AnalyticsResponse(BaseModel):
-    daily_data: List[AnalyticsData]
-    summary: Dict
-    trends: Dict
-    recommendations: List[str]
-
-class ProductivityInsight(BaseModel):
-    insight_type: str
-    title: str
-    description: str
-    value: float
-    trend: str
-
-@router.post("/track", response_model=AnalyticsData)
-async def track_daily_analytics(
-    analytics_data: AnalyticsData,
-    current_user: User = Depends(get_current_active_user),
+@router.get("/productivity")
+async def get_productivity_analytics(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Track daily productivity analytics
-    """
+    """Obtener analytics de productividad con datos reales"""
     try:
-        # Check if analytics already exists for today
-        existing_analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id,
-            UserAnalytics.date == analytics_data.date
-        ).first()
+        # Obtener estadísticas de tareas
+        total_tasks = db.query(Task).filter(Task.user_id == current_user.id).count()
+        completed_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "completed"
+        ).count()
         
-        if existing_analytics:
-            # Update existing analytics
-            existing_analytics.productivity_score = analytics_data.productivity_score
-            existing_analytics.tasks_completed = analytics_data.tasks_completed
-            existing_analytics.habits_completed = analytics_data.habits_completed
-            existing_analytics.time_spent_focused = analytics_data.time_spent_focused
-            existing_analytics.mood_score = analytics_data.mood_score
-        else:
-            # Create new analytics entry
-            new_analytics = UserAnalytics(
-                user_id=current_user.id,
-                date=analytics_data.date,
-                productivity_score=analytics_data.productivity_score,
-                tasks_completed=analytics_data.tasks_completed,
-                habits_completed=analytics_data.habits_completed,
-                time_spent_focused=analytics_data.time_spent_focused,
-                mood_score=analytics_data.mood_score
-            )
-            db.add(new_analytics)
+        # Calcular tasa de completación
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         
-        db.commit()
+        # Tareas por prioridad
+        priority_stats = db.query(
+            Task.priority,
+            func.count(Task.id).label('count')
+        ).filter(Task.user_id == current_user.id).group_by(Task.priority).all()
         
-        return analytics_data
+        # Tareas por categoría
+        category_stats = db.query(
+            Task.category,
+            func.count(Task.id).label('count')
+        ).filter(
+            Task.user_id == current_user.id,
+            Task.category.isnot(None)
+        ).group_by(Task.category).all()
         
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error tracking analytics: {str(e)}"
-        )
-
-@router.get("/dashboard", response_model=AnalyticsResponse)
-async def get_analytics_dashboard(
-    days: int = 30,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get comprehensive analytics dashboard
-    """
-    try:
-        # Get analytics data for the specified period
-        end_date = date.today()
-        start_date = end_date - timedelta(days=days)
+        # Tareas completadas en los últimos 7 días
+        week_ago = date.today() - timedelta(days=7)
+        recent_completions = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "completed",
+            Task.completed_at >= week_ago
+        ).count()
         
-        analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id,
-            UserAnalytics.date >= start_date,
-            UserAnalytics.date <= end_date
-        ).order_by(UserAnalytics.date).all()
+        # Tareas vencidas
+        overdue_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.due_date < date.today(),
+            Task.status.in_(["pending", "in_progress"])
+        ).count()
         
-        # Convert to Pydantic models
-        daily_data = [
-            AnalyticsData(
-                date=anal.date,
-                productivity_score=anal.productivity_score,
-                tasks_completed=anal.tasks_completed,
-                habits_completed=anal.habits_completed,
-                time_spent_focused=anal.time_spent_focused,
-                mood_score=anal.mood_score
-            )
-            for anal in analytics
-        ]
-        
-        # Calculate summary statistics
-        summary = _calculate_summary(daily_data)
-        
-        # Analyze trends
-        trends = _analyze_trends(daily_data)
-        
-        # Generate recommendations
-        recommendations = await _generate_recommendations(daily_data)
-        
-        return AnalyticsResponse(
-            daily_data=daily_data,
-            summary=summary,
-            trends=trends,
-            recommendations=recommendations
-        )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving analytics: {str(e)}"
-        )
-
-@router.get("/insights", response_model=List[ProductivityInsight])
-async def get_productivity_insights(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get AI-powered productivity insights
-    """
-    try:
-        # Get recent analytics data
-        analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id
-        ).order_by(UserAnalytics.date.desc()).limit(30).all()
-        
-        # Convert to format for ML analysis
-        analytics_data = [
-            {
-                "date": str(anal.date),
-                "productivity_score": anal.productivity_score,
-                "tasks_completed": anal.tasks_completed,
-                "habits_completed": anal.habits_completed,
-                "time_spent_focused": anal.time_spent_focused,
-                "mood_score": anal.mood_score
-            }
-            for anal in analytics
-        ]
-        
-        # Analyze patterns using ML service
-        patterns = await ml_service.analyze_user_patterns(analytics_data)
-        
-        # Generate insights
-        insights = _generate_insights(patterns, analytics_data)
-        
-        return insights
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating insights: {str(e)}"
-        )
-
-@router.get("/predictions")
-async def get_productivity_predictions(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get productivity predictions using ML
-    """
-    try:
-        # Get historical data
-        analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id
-        ).order_by(UserAnalytics.date.desc()).limit(30).all()
-        
-        analytics_data = [
-            {
-                "date": str(anal.date),
-                "productivity_score": anal.productivity_score,
-                "tasks_completed": anal.tasks_completed,
-                "habits_completed": anal.habits_completed,
-                "time_spent_focused": anal.time_spent_focused,
-                "mood_score": anal.mood_score
-            }
-            for anal in analytics
-        ]
-        
-        # Get predictions
-        predictions = await ml_service.predict_user_behavior(analytics_data)
-        
-        return predictions
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating predictions: {str(e)}"
-        )
-
-@router.get("/comparison")
-async def compare_periods(
-    period1_start: date,
-    period1_end: date,
-    period2_start: date,
-    period2_end: date,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Compare productivity between two time periods
-    """
-    try:
-        # Get data for both periods
-        period1_data = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id,
-            UserAnalytics.date >= period1_start,
-            UserAnalytics.date <= period1_end
-        ).all()
-        
-        period2_data = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id,
-            UserAnalytics.date >= period2_start,
-            UserAnalytics.date <= period2_end
-        ).all()
-        
-        # Calculate averages for each period
-        period1_avg = _calculate_period_averages(period1_data)
-        period2_avg = _calculate_period_averages(period2_data)
-        
-        # Calculate improvements/declines
-        comparison = {
-            "period1": period1_avg,
-            "period2": period2_avg,
-            "changes": {
-                "productivity_score": period2_avg["productivity_score"] - period1_avg["productivity_score"],
-                "tasks_completed": period2_avg["tasks_completed"] - period1_avg["tasks_completed"],
-                "habits_completed": period2_avg["habits_completed"] - period1_avg["habits_completed"],
-                "time_spent_focused": period2_avg["time_spent_focused"] - period1_avg["time_spent_focused"],
-                "mood_score": period2_avg["mood_score"] - period1_avg["mood_score"]
-            }
-        }
-        
-        return comparison
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error comparing periods: {str(e)}"
-        )
-
-def _calculate_summary(daily_data: List[AnalyticsData]) -> Dict:
-    """Calculate summary statistics"""
-    if not daily_data:
-        return {}
-    
-    productivity_scores = [d.productivity_score for d in daily_data]
-    tasks_completed = [d.tasks_completed for d in daily_data]
-    habits_completed = [d.habits_completed for d in daily_data]
-    time_spent = [d.time_spent_focused for d in daily_data]
-    mood_scores = [d.mood_score for d in daily_data]
-    
-    return {
-        "avg_productivity": sum(productivity_scores) / len(productivity_scores),
-        "total_tasks": sum(tasks_completed),
-        "total_habits": sum(habits_completed),
-        "total_focus_time": sum(time_spent),
-        "avg_mood": sum(mood_scores) / len(mood_scores),
-        "best_day": max(daily_data, key=lambda x: x.productivity_score).date,
-        "most_productive_day": max(daily_data, key=lambda x: x.tasks_completed).date
-    }
-
-def _analyze_trends(daily_data: List[AnalyticsData]) -> Dict:
-    """Analyze trends in the data"""
-    if len(daily_data) < 2:
-        return {"trend": "insufficient_data"}
-    
-    # Calculate trend for productivity score
-    productivity_scores = [d.productivity_score for d in daily_data]
-    if len(productivity_scores) > 1:
-        trend_slope = (productivity_scores[-1] - productivity_scores[0]) / len(productivity_scores)
-        if trend_slope > 0.1:
-            trend = "improving"
-        elif trend_slope < -0.1:
-            trend = "declining"
-        else:
-            trend = "stable"
-    else:
-        trend = "stable"
-    
-    return {
-        "trend": trend,
-        "consistency_score": _calculate_consistency(daily_data),
-        "peak_performance_days": _find_peak_days(daily_data)
-    }
-
-def _calculate_consistency(daily_data: List[AnalyticsData]) -> float:
-    """Calculate consistency score"""
-    if not daily_data:
-        return 0.0
-    
-    # Calculate standard deviation of productivity scores
-    scores = [d.productivity_score for d in daily_data]
-    mean_score = sum(scores) / len(scores)
-    variance = sum((score - mean_score) ** 2 for score in scores) / len(scores)
-    std_dev = variance ** 0.5
-    
-    # Lower standard deviation = higher consistency
-    consistency = max(0, 1 - (std_dev / 10))
-    return consistency
-
-def _find_peak_days(daily_data: List[AnalyticsData]) -> List[date]:
-    """Find days with peak performance"""
-    if not daily_data:
-        return []
-    
-    # Find days with productivity score > 8
-    peak_days = [d.date for d in daily_data if d.productivity_score >= 8]
-    return peak_days
-
-async def _generate_recommendations(daily_data: List[AnalyticsData]) -> List[str]:
-    """Generate personalized recommendations"""
-    if not daily_data:
-        return ["Comienza a registrar tu productividad para recibir recomendaciones personalizadas"]
-    
-    recommendations = []
-    
-    # Analyze average productivity
-    avg_productivity = sum(d.productivity_score for d in daily_data) / len(daily_data)
-    if avg_productivity < 6:
-        recommendations.append("Tu productividad promedio es baja. Considera implementar técnicas de gestión del tiempo.")
-    
-    # Analyze task completion
-    avg_tasks = sum(d.tasks_completed for d in daily_data) / len(daily_data)
-    if avg_tasks < 3:
-        recommendations.append("Completas pocas tareas por día. Intenta dividir tareas grandes en subtareas más pequeñas.")
-    
-    # Analyze habit consistency
-    days_with_habits = len([d for d in daily_data if d.habits_completed > 0])
-    habit_consistency = days_with_habits / len(daily_data)
-    if habit_consistency < 0.7:
-        recommendations.append("Tu consistencia en hábitos es baja. Establece recordatorios más frecuentes.")
-    
-    # Analyze focus time
-    avg_focus = sum(d.time_spent_focused for d in daily_data) / len(daily_data)
-    if avg_focus < 4:
-        recommendations.append("Dedicas poco tiempo al trabajo enfocado. Considera usar la técnica Pomodoro.")
-    
-    return recommendations[:5]
-
-def _generate_insights(patterns: Dict, analytics_data: List[Dict]) -> List[ProductivityInsight]:
-    """Generate productivity insights"""
-    insights = []
-    
-    if not analytics_data:
-        return insights
-    
-    # Calculate averages
-    avg_productivity = sum(d["productivity_score"] for d in analytics_data) / len(analytics_data)
-    avg_tasks = sum(d["tasks_completed"] for d in analytics_data) / len(analytics_data)
-    avg_habits = sum(d["habits_completed"] for d in analytics_data) / len(analytics_data)
-    avg_focus = sum(d["time_spent_focused"] for d in analytics_data) / len(analytics_data)
-    
-    # Generate insights based on patterns
-    if patterns.get("productivity_trends", {}).get("trend") == "improving":
-        insights.append(ProductivityInsight(
-            insight_type="trend",
-            title="Productividad en Aumento",
-            description="Tu productividad ha mejorado en las últimas semanas",
-            value=avg_productivity,
-            trend="up"
-        ))
-    
-    if avg_tasks < 3:
-        insights.append(ProductivityInsight(
-            insight_type="opportunity",
-            title="Oportunidad de Mejora",
-            description="Podrías completar más tareas por día",
-            value=avg_tasks,
-            trend="stable"
-        ))
-    
-    if avg_focus < 4:
-        insights.append(ProductivityInsight(
-            insight_type="focus",
-            title="Tiempo de Enfoque",
-            description="Considera dedicar más tiempo al trabajo enfocado",
-            value=avg_focus,
-            trend="down"
-        ))
-    
-    return insights
-
-def _calculate_period_averages(period_data: List) -> Dict:
-    """Calculate averages for a time period"""
-    if not period_data:
         return {
-            "productivity_score": 0,
-            "tasks_completed": 0,
-            "habits_completed": 0,
-            "time_spent_focused": 0,
-            "mood_score": 0
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "completion_rate": round(completion_rate, 2),
+            "recent_completions": recent_completions,
+            "overdue_tasks": overdue_tasks,
+            "priority_distribution": [
+                {"priority": stat.priority, "count": stat.count}
+                for stat in priority_stats
+            ],
+            "category_distribution": [
+                {"category": stat.category, "count": stat.count}
+                for stat in category_stats
+            ]
         }
-    
-    return {
-        "productivity_score": sum(d.productivity_score for d in period_data) / len(period_data),
-        "tasks_completed": sum(d.tasks_completed for d in period_data) / len(period_data),
-        "habits_completed": sum(d.habits_completed for d in period_data) / len(period_data),
-        "time_spent_focused": sum(d.time_spent_focused for d in period_data) / len(period_data),
-        "mood_score": sum(d.mood_score for d in period_data) / len(period_data)
-    }
+        
+    except Exception as e:
+        logger.error(f"Error getting productivity analytics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.get("/habits")
+async def get_habits_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener analytics de hábitos con datos reales"""
+    try:
+        # Estadísticas generales de hábitos
+        total_habits = db.query(Habit).filter(Habit.user_id == current_user.id).count()
+        active_habits = db.query(Habit).filter(
+            Habit.user_id == current_user.id,
+            Habit.is_active == True
+        ).count()
+        
+        # Hábitos completados hoy
+        today = date.today()
+        today_completions = db.query(HabitLog).join(Habit).filter(
+            Habit.user_id == current_user.id,
+            HabitLog.completed_at >= today
+        ).count()
+        
+        # Hábitos por categoría
+        category_stats = db.query(
+            Habit.category,
+            func.count(Habit.id).label('count')
+        ).filter(
+            Habit.user_id == current_user.id,
+            Habit.category.isnot(None)
+        ).group_by(Habit.category).all()
+        
+        # Hábitos por frecuencia
+        frequency_stats = db.query(
+            Habit.frequency,
+            func.count(Habit.id).label('count')
+        ).filter(Habit.user_id == current_user.id).group_by(Habit.frequency).all()
+        
+        # Racha más larga
+        all_logs = db.query(HabitLog).join(Habit).filter(
+            Habit.user_id == current_user.id
+        ).order_by(HabitLog.completed_at).all()
+        
+        max_streak = 0
+        current_streak = 0
+        last_date = None
+        
+        for log in all_logs:
+            log_date = log.completed_at.date()
+            if last_date is None or (log_date - last_date).days == 1:
+                current_streak += 1
+            else:
+                current_streak = 1
+            
+            max_streak = max(max_streak, current_streak)
+            last_date = log_date
+        
+        # Completaciones de la semana
+        week_ago = date.today() - timedelta(days=7)
+        week_completions = db.query(HabitLog).join(Habit).filter(
+            Habit.user_id == current_user.id,
+            HabitLog.completed_at >= week_ago
+        ).count()
+        
+        return {
+            "total_habits": total_habits,
+            "active_habits": active_habits,
+            "today_completions": today_completions,
+            "week_completions": week_completions,
+            "max_streak": max_streak,
+            "current_streak": current_streak,
+            "category_distribution": [
+                {"category": stat.category, "count": stat.count}
+                for stat in category_stats
+            ],
+            "frequency_distribution": [
+                {"frequency": stat.frequency, "count": stat.count}
+                for stat in frequency_stats
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting habits analytics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.get("/tasks")
+async def get_tasks_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener analytics detallados de tareas"""
+    try:
+        # Tareas por estado
+        status_stats = db.query(
+            Task.status,
+            func.count(Task.id).label('count')
+        ).filter(Task.user_id == current_user.id).group_by(Task.status).all()
+        
+        # Tareas por mes (últimos 6 meses)
+        six_months_ago = date.today() - timedelta(days=180)
+        monthly_stats = db.query(
+            extract('month', Task.created_at).label('month'),
+            extract('year', Task.created_at).label('year'),
+            func.count(Task.id).label('count')
+        ).filter(
+            Task.user_id == current_user.id,
+            Task.created_at >= six_months_ago
+        ).group_by(
+            extract('month', Task.created_at),
+            extract('year', Task.created_at)
+        ).order_by(
+            extract('year', Task.created_at),
+            extract('month', Task.created_at)
+        ).all()
+        
+        # Tiempo promedio de completación
+        completed_tasks_with_time = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "completed",
+            Task.completed_at.isnot(None),
+            Task.created_at.isnot(None)
+        ).all()
+        
+        avg_completion_time = 0
+        if completed_tasks_with_time:
+            total_hours = 0
+            for task in completed_tasks_with_time:
+                time_diff = task.completed_at - task.created_at
+                total_hours += time_diff.total_seconds() / 3600
+            avg_completion_time = total_hours / len(completed_tasks_with_time)
+        
+        # Tareas más urgentes (vencidas)
+        urgent_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.due_date < date.today(),
+            Task.status.in_(["pending", "in_progress"])
+        ).order_by(Task.due_date).limit(5).all()
+        
+        return {
+            "status_distribution": [
+                {"status": stat.status, "count": stat.count}
+                for stat in status_stats
+            ],
+            "monthly_trend": [
+                {
+                    "month": f"{stat.year}-{stat.month:02d}",
+                    "count": stat.count
+                }
+                for stat in monthly_stats
+            ],
+            "avg_completion_time_hours": round(avg_completion_time, 2),
+            "urgent_tasks": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "due_date": task.due_date,
+                    "priority": task.priority
+                }
+                for task in urgent_tasks
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting tasks analytics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.get("/chat")
+async def get_chat_analytics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener analytics del chat"""
+    try:
+        # Por ahora, como no tenemos un modelo de conversaciones,
+        # retornamos estadísticas básicas
+        # En el futuro, esto se conectaría con un modelo de conversaciones
+        
+        return {
+            "total_conversations": 0,
+            "messages_today": 0,
+            "most_common_intents": [
+                {"intent": "task_management", "count": 0},
+                {"intent": "habit_tracking", "count": 0},
+                {"intent": "productivity_advice", "count": 0}
+            ],
+            "average_response_time": 0,
+            "user_satisfaction": 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting chat analytics: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.get("/insights")
+async def get_productivity_insights(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener insights de productividad usando IA"""
+    try:
+        # Recopilar datos del usuario para análisis
+        user_data = {
+            "tasks_completed": db.query(Task).filter(
+                Task.user_id == current_user.id,
+                Task.status == "completed"
+            ).count(),
+            "habits_active": db.query(Habit).filter(
+                Habit.user_id == current_user.id,
+                Habit.is_active == True
+            ).count(),
+            "hours_focused": 0,  # Esto se calcularía con datos de sesiones de trabajo
+            "activity_pattern": "regular"
+        }
+        
+        # Generar insights usando el servicio de IA
+        insights = ai_service.get_productivity_insights(user_data)
+        
+        return {
+            "insights": insights,
+            "user_data": user_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting productivity insights: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
+@router.get("/summary")
+async def get_analytics_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener resumen general de analytics"""
+    try:
+        # Estadísticas generales
+        total_tasks = db.query(Task).filter(Task.user_id == current_user.id).count()
+        completed_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "completed"
+        ).count()
+        
+        total_habits = db.query(Habit).filter(Habit.user_id == current_user.id).count()
+        active_habits = db.query(Habit).filter(
+            Habit.user_id == current_user.id,
+            Habit.is_active == True
+        ).count()
+        
+        # Completaciones de hoy
+        today = date.today()
+        today_task_completions = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "completed",
+            Task.completed_at >= today
+        ).count()
+        
+        today_habit_completions = db.query(HabitLog).join(Habit).filter(
+            Habit.user_id == current_user.id,
+            HabitLog.completed_at >= today
+        ).count()
+        
+        # Tareas vencidas
+        overdue_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.due_date < date.today(),
+            Task.status.in_(["pending", "in_progress"])
+        ).count()
+        
+        return {
+            "overview": {
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "total_habits": total_habits,
+                "active_habits": active_habits
+            },
+            "today": {
+                "task_completions": today_task_completions,
+                "habit_completions": today_habit_completions
+            },
+            "alerts": {
+                "overdue_tasks": overdue_tasks
+            },
+            "completion_rate": round((completed_tasks / total_tasks * 100) if total_tasks > 0 else 0, 2)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting analytics summary: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )

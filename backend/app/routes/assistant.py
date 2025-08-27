@@ -1,277 +1,156 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+#!/usr/bin/env python3
+"""
+Rutas para el asistente de IA con TensorFlow
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional
-from pydantic import BaseModel
-from datetime import datetime
-import os
+from typing import Dict, Any
+import logging
 
-from app.database import get_db, User, Conversation, Task, Habit, UserAnalytics
+from app.database import get_db
 from app.services.ai_service import AIService
+from app.schemas.assistant import ChatRequest, ChatResponse
+from app.models.user import User
 from app.services.auth_service import get_current_user
-from app.utils.logger import logger
+from app.models.task import Task
+from app.models.habit import Habit
+from app.schemas.task import TaskCreate
+from app.schemas.habit import HabitCreate
 
-router = APIRouter()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["assistant"])
+
+# Inicializar servicio de IA
 ai_service = AIService()
 
-# Pydantic models
-class MessageRequest(BaseModel):
-    message: str
-    context: Optional[Dict] = None
-
-class MessageResponse(BaseModel):
-    response: str
-    intent: str
-    confidence: float
-    sentiment: str
-    suggestions: List[str]
-    timestamp: datetime
-
-class ConversationHistory(BaseModel):
-    id: int
-    message: str
-    response: str
-    intent: str
-    confidence: float
-    created_at: datetime
-
-@router.post("/chat", response_model=MessageResponse)
+@router.post("/chat", response_model=ChatResponse)
 async def chat_with_assistant(
-    request: MessageRequest,
+    request: ChatRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Chat with the AI assistant
-    """
+    """Chat con el asistente de IA usando TensorFlow"""
     try:
-        # Get user context
-        user_context = await _get_user_context(current_user, db)
+        logger.info(f"🧠 Procesando mensaje de usuario {current_user.id}: {request.message[:50]}...")
         
-        # Process message with AI
-        ai_response = await ai_service.process_message(
+        # Procesar mensaje con TensorFlow
+        response = ai_service.process_message(
             message=request.message,
-            user_context=user_context,
-            intent=request.context.get("intent") if request.context else None
+            user_id=str(current_user.id),
+            user_context={"user_id": current_user.id, "email": current_user.email}
         )
         
-        # Save conversation to database
-        conversation = Conversation(
-            user_id=current_user.id,
-            message=request.message,
-            response=ai_response["response"],
-            intent=ai_response["intent"],
-            confidence=ai_response["confidence"]
-        )
-        db.add(conversation)
-        db.commit()
-        
-        return MessageResponse(
-            response=ai_response["response"],
-            intent=ai_response["intent"],
-            confidence=ai_response["confidence"],
-            sentiment=ai_response["sentiment"],
-            suggestions=ai_response["suggestions"],
-            timestamp=datetime.now()
-        )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing message: {str(e)}"
-        )
-
-@router.get("/conversations", response_model=List[ConversationHistory])
-async def get_conversation_history(
-    limit: int = 20,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get conversation history for the current user
-    """
-    try:
-        conversations = db.query(Conversation).filter(
-            Conversation.user_id == current_user.id
-        ).order_by(Conversation.created_at.desc()).limit(limit).all()
-        
-        return [
-            ConversationHistory(
-                id=conv.id,
-                message=conv.message,
-                response=conv.response,
-                intent=conv.intent,
-                confidence=conv.confidence,
-                created_at=conv.created_at
+        # Si la IA indica que se creó una tarea, crearla realmente en la base de datos
+        if response.get('task_created'):
+            logger.info(f"📝 Creando tarea en base de datos: {response['task_created']['title']}")
+            
+            task_data = response['task_created']
+            task_create = TaskCreate(
+                title=task_data['title'],
+                description=task_data['description'],
+                priority=task_data['priority'],
+                status=task_data['status'],
+                due_date=task_data.get('due_date'),
+                user_id=current_user.id
             )
-            for conv in conversations
-        ]
+            
+            db_task = Task(**task_create.dict())
+            db.add(db_task)
+            db.commit()
+            db.refresh(db_task)
+            
+            logger.info(f"✅ Tarea creada exitosamente: {db_task.title} (ID: {db_task.id})")
         
+        # Si la IA indica que se creó un hábito, crearlo realmente en la base de datos
+        if response.get('habit_created'):
+            logger.info(f"🔄 Creando hábito en base de datos: {response['habit_created']['name']}")
+            
+            habit_data = response['habit_created']
+            habit_create = HabitCreate(
+                name=habit_data['name'],
+                description=habit_data['description'],
+                frequency=habit_data['frequency'],
+                time_of_day=habit_data.get('time_of_day', 'flexible'),
+                user_id=current_user.id
+            )
+            
+            db_habit = Habit(**habit_create.dict())
+            db.add(db_habit)
+            db.commit()
+            db.refresh(db_habit)
+            
+            logger.info(f"✅ Hábito creado exitosamente: {db_habit.name} (ID: {db_habit.id})")
+        
+        logger.info(f"✅ Respuesta generada - Intención: {response.get('intent')}")
+        
+        return ChatResponse(
+            success=True,
+            message="Mensaje procesado exitosamente",
+            data=response
+        )
+        
+    except HTTPException as e:
+        # Si es un error de autenticación, dar un mensaje más útil
+        if e.status_code == 401:
+            logger.warning(f"🔐 Sesión perdida para usuario: {e.detail}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Tu sesión ha expirado. Por favor, vuelve a iniciar sesión para continuar usando el asistente."
+            )
+        else:
+            raise e
     except Exception as e:
+        logger.error(f"❌ Error en chat con asistente: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving conversations: {str(e)}"
+            detail=f"Error procesando mensaje: {str(e)}"
         )
 
-@router.post("/suggestions/tasks")
-async def get_task_suggestions(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get AI-powered task suggestions
-    """
+@router.get("/model-info")
+async def get_model_info():
+    """Obtener información del modelo de TensorFlow"""
     try:
-        # Get user's current tasks
-        user_tasks = db.query(Task).filter(
-            Task.user_id == current_user.id,
-            Task.status.in_(["pending", "in_progress"])
-        ).all()
-        
-        task_data = [
-            {
-                "title": task.title,
-                "description": task.description,
-                "priority": task.priority
-            }
-            for task in user_tasks
-        ]
-        
-        # Generate suggestions
-        suggestions = await ai_service.generate_task_suggestions(task_data)
-        
-        return {"suggestions": suggestions}
-        
+        model_info = ai_service.get_model_info()
+        return {
+            "success": True,
+            "message": "Información del modelo obtenida",
+            "data": model_info
+        }
     except Exception as e:
+        logger.error(f"❌ Error obteniendo información del modelo: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating task suggestions: {str(e)}"
+            detail=f"Error obteniendo información del modelo: {str(e)}"
         )
 
-@router.get("/analytics/productivity")
-async def analyze_productivity(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get AI-powered productivity analysis
-    """
+@router.get("/health")
+async def assistant_health():
+    """Verificar estado del asistente de IA"""
     try:
-        # Get user analytics data
-        analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == current_user.id
-        ).order_by(UserAnalytics.date.desc()).limit(30).all()
-        
-        analytics_data = [
-            {
-                "date": str(anal.date),
-                "productivity_score": anal.productivity_score,
-                "tasks_completed": anal.tasks_completed,
-                "habits_completed": anal.habits_completed,
-                "time_spent_focused": anal.time_spent_focused,
-                "mood_score": anal.mood_score
-            }
-            for anal in analytics
-        ]
-        
-        # Analyze patterns
-        analysis = await ai_service.analyze_productivity_patterns(analytics_data)
-        
-        return analysis
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error analyzing productivity: {str(e)}"
-        )
-
-@router.post("/voice/transcribe")
-async def transcribe_voice(
-    audio_file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Transcribe voice message to text
-    """
-    try:
-        # Save audio file temporarily
-        temp_file = f"temp_audio_{current_user.id}_{datetime.now().timestamp()}.wav"
-        
-        with open(temp_file, "wb") as buffer:
-            content = await audio_file.read()
-            buffer.write(content)
-        
-        # TODO: Implement voice transcription
-        # For now, return a placeholder
-        transcribed_text = "Transcripción de voz no implementada aún"
-        
-        # Clean up temp file
-        os.remove(temp_file)
-        
-        return {"transcribed_text": transcribed_text}
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error transcribing voice: {str(e)}"
-        )
-
-@router.get("/intent/analyze")
-async def analyze_intent(
-    message: str,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Analyze the intent of a message
-    """
-    try:
-        intent = await ai_service.ml_service.classify_intent(message)
+        model_info = ai_service.get_model_info()
+        is_healthy = model_info.get("status") in ["active", "fallback"]
         
         return {
-            "message": message,
-            "intent": intent,
-            "confidence": 0.8  # Placeholder confidence
+            "success": True,
+            "message": "Estado del asistente verificado",
+            "data": {
+                "status": "healthy" if is_healthy else "unhealthy",
+                "model_info": model_info,
+                "timestamp": "2025-01-15T00:00:00Z"
+            }
         }
-        
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error analyzing intent: {str(e)}"
-        )
-
-async def _get_user_context(user: User, db: Session) -> Dict:
-    """
-    Get user context for AI processing
-    """
-    try:
-        context = {}
-        
-        # Get recent tasks
-        recent_tasks = db.query(Task).filter(
-            Task.user_id == user.id,
-            Task.status.in_(["pending", "in_progress"])
-        ).limit(5).all()
-        
-        context["recent_tasks"] = [task.title for task in recent_tasks]
-        
-        # Get active habits
-        active_habits = db.query(Habit).filter(
-            Habit.user_id == user.id,
-            Habit.is_active == True
-        ).all()
-        
-        context["habits"] = [habit.name for habit in active_habits]
-        
-        # Get latest productivity score
-        latest_analytics = db.query(UserAnalytics).filter(
-            UserAnalytics.user_id == user.id
-        ).order_by(UserAnalytics.date.desc()).first()
-        
-        if latest_analytics:
-            context["productivity_score"] = latest_analytics.productivity_score
-            context["mood"] = f"{latest_analytics.mood_score}/10"
-        
-        return context
-        
-    except Exception as e:
-        logger.error(f"Error getting user context: {e}")
-        return {}
+        logger.error(f"❌ Error verificando salud del asistente: {e}")
+        return {
+            "success": False,
+            "message": "Error verificando estado del asistente",
+            "data": {
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": "2025-01-15T00:00:00Z"
+            }
+        }

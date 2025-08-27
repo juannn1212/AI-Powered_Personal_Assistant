@@ -1,59 +1,41 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
 import os
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
+# Load environment variables
+load_dotenv()
+
+class Settings:
     # Database
-    DATABASE_URL: str = "sqlite:///./ai_assistant.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./ai_assistant.db")
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     
     # OpenAI
-    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     
-    # Firebase
-    FIREBASE_PROJECT_ID: Optional[str] = None
-    FIREBASE_PRIVATE_KEY_ID: Optional[str] = None
-    FIREBASE_PRIVATE_KEY: Optional[str] = None
-    FIREBASE_CLIENT_EMAIL: Optional[str] = None
-    FIREBASE_CLIENT_ID: Optional[str] = None
-    FIREBASE_AUTH_URI: str = "https://accounts.google.com/o/oauth2/auth"
-    FIREBASE_TOKEN_URI: str = "https://oauth2.googleapis.com/token"
-    FIREBASE_AUTH_PROVIDER_X509_CERT_URL: str = "https://www.googleapis.com/oauth2/v1/certs"
-    FIREBASE_CLIENT_X509_CERT_URL: Optional[str] = None
+    # Server
+    HOST: str = os.getenv("HOST", "127.0.0.1")
+    PORT: int = int(os.getenv("PORT", "8000"))
+    DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
     
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
-    
-    # ML Models
-    MODEL_PATH: str = "./ml_models"
-    
-    # API Settings
-    API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "AI-Powered Personal Assistant"
+    # Logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    LOG_FILE: str = os.getenv("LOG_FILE", "logs/app.log")
     
     # CORS
-    BACKEND_CORS_ORIGINS: list = ["*"]
+    ALLOWED_ORIGINS: list = ["http://localhost:3000", "http://localhost:19006", "exp://localhost:19000"]
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    # ML
+    ML_MODELS_PATH: str = os.getenv("ML_MODELS_PATH", "ml_models/")
+    ENABLE_ML_FEATURES: bool = os.getenv("ENABLE_ML_FEATURES", "True").lower() == "true"
+    
+    # Email (optional)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 
 settings = Settings()
-
-# Firebase configuration
-FIREBASE_CONFIG = {
-    "type": "service_account",
-    "project_id": settings.FIREBASE_PROJECT_ID,
-    "private_key_id": settings.FIREBASE_PRIVATE_KEY_ID,
-    "private_key": settings.FIREBASE_PRIVATE_KEY,
-    "client_email": settings.FIREBASE_CLIENT_EMAIL,
-    "client_id": settings.FIREBASE_CLIENT_ID,
-    "auth_uri": settings.FIREBASE_AUTH_URI,
-    "token_uri": settings.FIREBASE_TOKEN_URI,
-    "auth_provider_x509_cert_url": settings.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
-    "client_x509_cert_url": settings.FIREBASE_CLIENT_X509_CERT_URL
-}

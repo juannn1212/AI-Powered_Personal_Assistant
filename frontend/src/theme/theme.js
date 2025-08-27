@@ -1,39 +1,52 @@
-import { DefaultTheme } from 'react-native-paper';
+import { Dimensions } from 'react-native';
 
-export const theme = {
-  ...DefaultTheme,
+const { width, height } = Dimensions.get('window');
+
+export const lightTheme = {
   colors: {
-    ...DefaultTheme.colors,
-    primary: '#6200EE',
-    primaryVariant: '#3700B3',
-    secondary: '#03DAC6',
-    secondaryVariant: '#018786',
+    primary: '#6366F1',
+    primaryLight: '#818CF8',
+    primaryDark: '#4F46E5',
+    secondary: '#10B981',
+    secondaryLight: '#34D399',
+    secondaryDark: '#059669',
+    accent: '#F59E0B',
+    accentLight: '#FBBF24',
+    accentDark: '#D97706',
+    
+    // Background colors
     background: '#FFFFFF',
+    backgroundSecondary: '#F8FAFC',
+    backgroundTertiary: '#F1F5F9',
     surface: '#FFFFFF',
-    error: '#B00020',
-    onPrimary: '#FFFFFF',
-    onSecondary: '#000000',
-    onBackground: '#000000',
-    onSurface: '#000000',
-    onError: '#FFFFFF',
-    border: '#E0E0E0',
-    card: '#F5F5F5',
-    text: '#212121',
-    textSecondary: '#757575',
-    success: '#4CAF50',
-    warning: '#FF9800',
-    info: '#2196F3',
-    gradient: ['#6200EE', '#3700B3'],
-    chatBubble: {
-      user: '#E3F2FD',
-      assistant: '#F5F5F5',
-    },
-    productivity: {
-      high: '#4CAF50',
-      medium: '#FF9800',
-      low: '#F44336',
-    }
+    surfaceVariant: '#F8FAFC',
+    
+    // Text colors
+    text: '#1E293B',
+    textSecondary: '#64748B',
+    textTertiary: '#94A3B8',
+    textInverse: '#FFFFFF',
+    
+    // Status colors
+    success: '#10B981',
+    warning: '#F59E0B',
+    error: '#EF4444',
+    info: '#3B82F6',
+    
+    // Border colors
+    border: '#E2E8F0',
+    borderLight: '#F1F5F9',
+    borderDark: '#CBD5E1',
+    
+    // Shadow colors
+    shadow: 'rgba(0, 0, 0, 0.1)',
+    shadowDark: 'rgba(0, 0, 0, 0.2)',
+    
+    // Overlay colors
+    overlay: 'rgba(0, 0, 0, 0.5)',
+    overlayLight: 'rgba(0, 0, 0, 0.1)',
   },
+  
   spacing: {
     xs: 4,
     sm: 8,
@@ -41,71 +54,192 @@ export const theme = {
     lg: 24,
     xl: 32,
     xxl: 48,
+    xxxl: 64,
   },
+  
   borderRadius: {
-    sm: 4,
-    md: 8,
-    lg: 12,
-    xl: 16,
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
     round: 50,
   },
+  
   typography: {
     h1: {
       fontSize: 32,
       fontWeight: 'bold',
+      lineHeight: 40,
+      letterSpacing: -0.5,
     },
     h2: {
-      fontSize: 24,
+      fontSize: 28,
       fontWeight: 'bold',
+      lineHeight: 36,
+      letterSpacing: -0.3,
     },
     h3: {
-      fontSize: 20,
+      fontSize: 24,
       fontWeight: '600',
+      lineHeight: 32,
+      letterSpacing: -0.2,
     },
     h4: {
+      fontSize: 20,
+      fontWeight: '600',
+      lineHeight: 28,
+      letterSpacing: -0.1,
+    },
+    h5: {
       fontSize: 18,
       fontWeight: '600',
+      lineHeight: 24,
+    },
+    h6: {
+      fontSize: 16,
+      fontWeight: '600',
+      lineHeight: 20,
     },
     body1: {
       fontSize: 16,
+      fontWeight: 'normal',
+      lineHeight: 24,
     },
     body2: {
       fontSize: 14,
+      fontWeight: 'normal',
+      lineHeight: 20,
     },
     caption: {
       fontSize: 12,
+      fontWeight: 'normal',
+      lineHeight: 16,
+    },
+    button: {
+      fontSize: 16,
+      fontWeight: '600',
+      lineHeight: 24,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    input: {
+      fontSize: 16,
+      fontWeight: 'normal',
+      lineHeight: 24,
     },
   },
+  
   shadows: {
-    small: {
-      shadowColor: '#000',
-      shadowOffset: {
-        width: 0,
-        height: 2,
-      },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      elevation: 5,
+    sm: {
+      shadowColor: 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
+      elevation: 2,
     },
-    medium: {
-      shadowColor: '#000',
-      shadowOffset: {
-        width: 0,
-        height: 4,
-      },
-      shadowOpacity: 0.30,
-      shadowRadius: 4.65,
+    md: {
+      shadowColor: 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    lg: {
+      shadowColor: 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.1,
+      shadowRadius: 16,
       elevation: 8,
     },
-    large: {
-      shadowColor: '#000',
-      shadowOffset: {
-        width: 0,
-        height: 6,
-      },
-      shadowOpacity: 0.37,
-      shadowRadius: 7.49,
-      elevation: 12,
+    xl: {
+      shadowColor: 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 16 },
+      shadowOpacity: 0.1,
+      shadowRadius: 24,
+      elevation: 16,
+    },
+  },
+  
+  layout: {
+    screenWidth: width,
+    screenHeight: height,
+    maxWidth: 400,
+    headerHeight: 60,
+    tabBarHeight: 80,
+  },
+  
+  animation: {
+    duration: {
+      fast: 200,
+      normal: 300,
+      slow: 500,
+    },
+    easing: {
+      ease: 'ease',
+      easeIn: 'ease-in',
+      easeOut: 'ease-out',
+      easeInOut: 'ease-in-out',
     },
   },
 };
+
+export const darkTheme = {
+  colors: {
+    primary: '#818CF8',
+    primaryLight: '#A5B4FC',
+    primaryDark: '#6366F1',
+    secondary: '#34D399',
+    secondaryLight: '#6EE7B7',
+    secondaryDark: '#10B981',
+    accent: '#FBBF24',
+    accentLight: '#FCD34D',
+    accentDark: '#F59E0B',
+    
+    // Background colors
+    background: '#0F172A',
+    backgroundSecondary: '#1E293B',
+    backgroundTertiary: '#334155',
+    surface: '#1E293B',
+    surfaceVariant: '#334155',
+    
+    // Text colors
+    text: '#F8FAFC',
+    textSecondary: '#CBD5E1',
+    textTertiary: '#94A3B8',
+    textInverse: '#0F172A',
+    
+    // Status colors
+    success: '#34D399',
+    warning: '#FBBF24',
+    error: '#F87171',
+    info: '#60A5FA',
+    
+    // Border colors
+    border: '#334155',
+    borderLight: '#475569',
+    borderDark: '#1E293B',
+    
+    // Shadow colors
+    shadow: 'rgba(0, 0, 0, 0.3)',
+    shadowDark: 'rgba(0, 0, 0, 0.5)',
+    
+    // Overlay colors
+    overlay: 'rgba(0, 0, 0, 0.7)',
+    overlayLight: 'rgba(0, 0, 0, 0.3)',
+  },
+  
+  spacing: lightTheme.spacing,
+  borderRadius: lightTheme.borderRadius,
+  typography: lightTheme.typography,
+  shadows: lightTheme.shadows,
+  layout: lightTheme.layout,
+  animation: lightTheme.animation,
+};
+
+export const getTheme = (isDark = false) => {
+  return isDark ? darkTheme : lightTheme;
+};
+
+export default lightTheme;

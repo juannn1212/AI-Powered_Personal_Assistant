@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../services/api';
+import { Alert } from 'react-native';
+import { API_BASE_URL } from '../config/api';
 
 const AuthContext = createContext();
 
@@ -15,7 +16,8 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     loadStoredAuth();
@@ -29,144 +31,349 @@ export const AuthProvider = ({ children }) => {
       if (storedToken && storedUser) {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
-        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        setIsAuthenticated(true);
       }
     } catch (error) {
       console.error('Error loading stored auth:', error);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   const login = async (email, password) => {
     try {
-      setIsLoading(true);
-      const response = await api.post('/auth/login', { email, password });
+      setLoading(true);
       
-      const { access_token, user: userData } = response.data;
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error en el inicio de sesión');
+      }
+
+      const { access_token, user: userData } = data;
       
-      // Store auth data
+      // Guardar en AsyncStorage
       await AsyncStorage.setItem('auth_token', access_token);
       await AsyncStorage.setItem('user_data', JSON.stringify(userData));
       
-      // Update state
+      // Actualizar estado
       setToken(access_token);
       setUser(userData);
-      
-      // Set API header
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      setIsAuthenticated(true);
       
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.detail || 'Error de inicio de sesión'
-      };
+      Alert.alert('Error', error.message || 'Error en el inicio de sesión');
+      return { success: false, error: error.message };
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const register = async (userData) => {
+  const register = async (email, password, fullName) => {
     try {
-      setIsLoading(true);
-      const response = await api.post('/auth/register', userData);
+      setLoading(true);
       
-      const { access_token, user: newUser } = response.data;
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password, full_name: fullName }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error en el registro');
+      }
+
+      const { access_token, user: userData } = data;
       
-      // Store auth data
+      // Guardar en AsyncStorage
       await AsyncStorage.setItem('auth_token', access_token);
-      await AsyncStorage.setItem('user_data', JSON.stringify(newUser));
+      await AsyncStorage.setItem('user_data', JSON.stringify(userData));
       
-      // Update state
+      // Actualizar estado
       setToken(access_token);
-      setUser(newUser);
-      
-      // Set API header
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      setUser(userData);
+      setIsAuthenticated(true);
       
       return { success: true };
     } catch (error) {
       console.error('Register error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.detail || 'Error de registro'
-      };
+      Alert.alert('Error', error.message || 'Error en el registro');
+      return { success: false, error: error.message };
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
+  };
+
+  const handleSessionExpired = async () => {
+    console.log('🔐 Manejando expiración de sesión...');
+    
+    // Limpiar datos de sesión
+    await AsyncStorage.removeItem('auth_token');
+    await AsyncStorage.removeItem('user_data');
+    
+    // Actualizar estado
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    
+    // Mostrar alerta
+    Alert.alert(
+      'Sesión Expirada',
+      'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.',
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            // La navegación se manejará automáticamente por el estado de autenticación
+          }
+        }
+      ]
+    );
   };
 
   const logout = async () => {
     try {
-      // Clear stored data
+      console.log('🔄 Iniciando logout...');
+      setLoading(true);
+      
+      // Llamar al endpoint de logout del backend si hay token
+      if (token) {
+        console.log('🌐 Llamando al endpoint de logout...');
+        try {
+          const response = await fetch(`${API_BASE_URL}/auth/logout`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          
+          if (response.ok) {
+            console.log('✅ Endpoint de logout exitoso');
+          } else {
+            console.log('⚠️ Endpoint de logout falló, pero continuando...');
+          }
+        } catch (error) {
+          console.log('⚠️ Error en endpoint de logout, pero continuando...');
+        }
+      }
+      
+      // Limpiar AsyncStorage
+      console.log('🗑️ Limpiando AsyncStorage...');
       await AsyncStorage.removeItem('auth_token');
       await AsyncStorage.removeItem('user_data');
+      console.log('✅ AsyncStorage limpiado');
       
-      // Clear state
+      // Limpiar estado de forma síncrona
+      console.log('🔄 Limpiando estado...');
       setToken(null);
       setUser(null);
+      setIsAuthenticated(false);
+      console.log('✅ Estado limpiado');
       
-      // Clear API header
-      delete api.defaults.headers.common['Authorization'];
+      // Forzar actualización del estado
+      console.log('🔄 Forzando actualización...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('✅ Logout completado exitosamente');
+      console.log('📊 Estado final - isAuthenticated:', false);
+      console.log('📊 Estado final - user:', null);
+      console.log('📊 Estado final - token:', null);
+      
+      return { success: true };
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('❌ Logout error:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateUser = async (userData) => {
+  const updateProfile = async (profileData) => {
     try {
-      const response = await api.put('/auth/me', userData);
-      const updatedUser = response.data;
+      setLoading(true);
       
-      // Update stored data
+      console.log('Actualizando perfil con datos:', profileData);
+      console.log('Token:', token);
+      
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(profileData),
+      });
+
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error al actualizar perfil');
+      }
+
+      // Actualizar usuario en estado y AsyncStorage
+      const updatedUser = { ...user, ...data };
+      setUser(updatedUser);
       await AsyncStorage.setItem('user_data', JSON.stringify(updatedUser));
       
-      // Update state
-      setUser(updatedUser);
-      
-      return { success: true };
+      console.log('Perfil actualizado exitosamente:', updatedUser);
+      return { success: true, user: updatedUser };
     } catch (error) {
-      console.error('Update user error:', error);
-      return {
-        success: false,
-        error: error.response?.data?.detail || 'Error al actualizar perfil'
-      };
+      console.error('Update profile error:', error);
+      Alert.alert('Error', error.message || 'Error al actualizar perfil');
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
     }
   };
 
-  const refreshToken = async () => {
+  const changePassword = async (currentPassword, newPassword) => {
     try {
-      const response = await api.post('/auth/refresh');
-      const { access_token } = response.data;
+      setLoading(true);
       
-      // Update stored token
-      await AsyncStorage.setItem('auth_token', access_token);
+      const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error al cambiar contraseña');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Change password error:', error);
+      Alert.alert('Error', error.message || 'Error al cambiar contraseña');
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const forgotPassword = async (email) => {
+    try {
+      setLoading(true);
       
-      // Update state and API header
-      setToken(access_token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error al procesar solicitud');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      Alert.alert('Error', error.message || 'Error al procesar solicitud');
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetPassword = async (email, newPassword) => {
+    try {
+      setLoading(true);
+      
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, new_password: newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Error al restablecer contraseña');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      Alert.alert('Error', error.message || 'Error al restablecer contraseña');
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteAccount = async () => {
+    try {
+      setLoading(true);
+      
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || 'Error al eliminar cuenta');
+      }
+
+      // Limpiar datos
+      await logout();
       
       return { success: true };
     } catch (error) {
-      console.error('Token refresh error:', error);
-      // If refresh fails, logout user
-      await logout();
-      return { success: false };
+      console.error('Delete account error:', error);
+      Alert.alert('Error', error.message || 'Error al eliminar cuenta');
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
     }
   };
 
   const value = {
     user,
     token,
-    isLoading,
-    isAuthenticated: !!token,
+    loading,
+    isAuthenticated,
     login,
     register,
     logout,
-    updateUser,
-    refreshToken,
+    updateProfile,
+    changePassword,
+    forgotPassword,
+    resetPassword,
+    deleteAccount,
+    handleSessionExpired,
   };
 
   return (
