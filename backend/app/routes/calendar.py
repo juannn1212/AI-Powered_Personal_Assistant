@@ -6,7 +6,7 @@ from datetime import datetime, date
 
 from app.database import get_db
 from app.models.user import User
-from app.routes.auth import get_current_active_user
+from app.routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -44,7 +44,7 @@ class EventResponse(BaseModel):
 @router.post("/events", response_model=EventResponse)
 async def create_event(
     event_data: EventCreate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -86,7 +86,7 @@ async def create_event(
 async def get_events(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -120,7 +120,7 @@ async def get_events(
 @router.get("/events/{event_id}", response_model=EventResponse)
 async def get_event(
     event_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -153,7 +153,7 @@ async def get_event(
 async def update_event(
     event_id: int,
     event_data: EventUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -185,7 +185,7 @@ async def update_event(
 @router.delete("/events/{event_id}")
 async def delete_event(
     event_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -205,7 +205,7 @@ async def delete_event(
 async def check_schedule_conflicts(
     start_time: datetime,
     end_time: datetime,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -229,7 +229,7 @@ async def check_schedule_conflicts(
 @router.get("/schedule/suggestions")
 async def get_schedule_suggestions(
     duration_minutes: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
