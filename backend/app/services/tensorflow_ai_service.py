@@ -17,6 +17,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 import pickle
 import os
+from collections import OrderedDict
+
+from app.services import emotional_support
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,8 @@ class TensorFlowAIService:
         self.model = None
         self.vectorizer = None
         self.label_encoder = None
+        # Historial en memoria POR usuario (antes era una sola lista compartida entre todos)
+        self._histories: "OrderedDict[str, list]" = OrderedDict()
         self.conversation_history = []
         self.user_context = {}
         self.model_path = "ai_model"
@@ -1049,9 +1054,37 @@ class TensorFlowAIService:
             "habit_created": habit_data
         }
     
+    MAX_TRACKED_USERS = 1000
+
+    def _history_for(self, user_id: Optional[str]) -> list:
+        """Historial de conversación aislado por usuario (solo en memoria, acotado)."""
+        key = str(user_id) if user_id is not None else "anon"
+        history = self._histories.setdefault(key, [])
+        self._histories.move_to_end(key)
+        while len(self._histories) > self.MAX_TRACKED_USERS:
+            self._histories.popitem(last=False)
+        return history
+
+    def _remember_ai(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        self.conversation_history.append({
+            "text": response["response"],
+            "intent": response.get("intent"),
+            "timestamp": datetime.utcnow().isoformat(),
+            "is_ai": True,
+        })
+        return response
+
     def process_message(self, message: str, user_id: str = None, user_context: Dict = None) -> Dict[str, Any]:
-        """Procesar mensaje usando TensorFlow ML"""
+        """Procesar mensaje: seguridad primero, luego apoyo emocional, luego el clasificador."""
         try:
+            self.conversation_history = self._history_for(user_id)
+
+            # Capa de seguridad: SIEMPRE primero y sin depender del modelo
+            crisis = emotional_support.check_crisis(message)
+            if crisis:
+                self.conversation_history.append({"text": "[mensaje sensible]", "timestamp": datetime.utcnow().isoformat(), "user_id": user_id})
+                return self._remember_ai(emotional_support.to_response(crisis))
+
             # Agregar mensaje al historial
             self.conversation_history.append({
                 "text": message,
@@ -1066,11 +1099,21 @@ class TensorFlowAIService:
             # Obtener contexto
             conversation_context = self._get_conversation_context()
             
+            pending_task = self._should_create_task(message, conversation_context)
+            pending_habit = self._should_create_habit(message, conversation_context)
+
+            # Ejercicios y emociones claras (si hay una creación en curso, solo cuando la persona habla de sí misma)
+            support = emotional_support.analyze(message)
+            if support and (not (pending_task or pending_habit)
+                            or support.kind == "exercise"
+                            or emotional_support.is_first_person(message)):
+                return self._remember_ai(emotional_support.to_response(support))
+
             # Verificar si es respuesta a creación de tarea/hábito
-            if self._should_create_task(message, conversation_context):
+            if pending_task:
                 return self._handle_task_creation_response(message)
             
-            if self._should_create_habit(message, conversation_context):
+            if pending_habit:
                 return self._handle_habit_creation_response(message)
             
             # Predecir intención usando TensorFlow

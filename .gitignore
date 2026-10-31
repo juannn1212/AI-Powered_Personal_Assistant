@@ -306,3 +306,9 @@ temp/
 tmp/
 *.tmp
 *.temp
+
+# Artefactos del clasificador: se regeneran en cada arranque (entrenamiento al iniciar)
+backend/ai_model/
+backend/vectorizer.pkl
+backend/label_encoder.pkl
+backend/*.db

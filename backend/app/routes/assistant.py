@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services.auth_service import get_current_user
 from app.models.task import Task
 from app.models.habit import Habit
+from app.models.chat_message import ChatMessage
 from app.schemas.task import TaskCreate
 from app.schemas.habit import HabitCreate
 
@@ -26,6 +27,29 @@ router = APIRouter(tags=["assistant"])
 
 # Inicializar servicio de IA
 ai_service = AIService()
+
+def _record_chat_metadata(db: Session, user_id: int, response: Dict[str, Any]) -> None:
+    """Guarda SOLO metadatos del mensaje (intención, emoción, sentimiento), nunca el texto.
+
+    Los mensajes de crisis se registran como apoyo emocional genérico y sin emoción: no
+    persistimos que una persona haya activado el protocolo de crisis.
+    """
+    try:
+        intent = response.get("intent")
+        emotion = response.get("emotion")
+        if response.get("crisis") or intent == "crisis_support":
+            intent, emotion = "emotional_support", None
+        db.add(ChatMessage(
+            user_id=user_id,
+            intent=intent,
+            emotion=emotion,
+            sentiment=response.get("sentiment"),
+        ))
+        db.commit()
+    except Exception as e:  # las analíticas nunca deben romper el chat
+        db.rollback()
+        logger.warning(f"No se pudo registrar metadatos del chat: {e}")
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_assistant(
@@ -85,6 +109,8 @@ async def chat_with_assistant(
             
             logger.info(f"✅ Hábito creado exitosamente: {db_habit.name} (ID: {db_habit.id})")
         
+        _record_chat_metadata(db, current_user.id, response)
+
         logger.info(f"✅ Respuesta generada - Intención: {response.get('intent')}")
         
         return ChatResponse(

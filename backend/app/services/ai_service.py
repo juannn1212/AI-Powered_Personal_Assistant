@@ -6,15 +6,30 @@ Servicio principal de IA - Integración con TensorFlow ML
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-from .tensorflow_ai_service import TensorFlowAIService
+from . import emotional_support
+
+try:  # TensorFlow es opcional: la capa de seguridad funciona sin él
+    from .tensorflow_ai_service import TensorFlowAIService
+except Exception as _e:  # pragma: no cover
+    TensorFlowAIService = None
+    logging.getLogger(__name__).warning(f"TensorFlow no disponible: {_e}")
 
 logger = logging.getLogger(__name__)
+
+GREETING_TEXT = (
+    "¡Hola! Soy tu asistente de bienestar y productividad. Puedo ayudarte a organizar tareas y hábitos, "
+    "y también acompañarte cuando te sientas estresado/a o abrumado/a.\n\n"
+    "Soy un asistente de IA, no un profesional de salud mental ni un servicio de emergencias.\n\n"
+    "¿Cómo te sientes hoy?"
+)
 
 class AIService:
     def __init__(self):
         """Inicializar servicio de IA con TensorFlow"""
         try:
             logger.info("🧠 Inicializando servicio de IA con TensorFlow...")
+            if TensorFlowAIService is None:
+                raise RuntimeError("TensorFlow no está instalado")
             self.tensorflow_ai = TensorFlowAIService()
             logger.info("✅ Servicio de IA con TensorFlow inicializado exitosamente")
         except Exception as e:
@@ -23,6 +38,10 @@ class AIService:
     
     def process_message(self, message: str, user_id: str = None, user_context: Dict = None) -> Dict[str, Any]:
         """Procesar mensaje usando TensorFlow ML"""
+        # Seguridad primero, también cuando el modelo no está disponible o falla
+        crisis = emotional_support.check_crisis(message)
+        if crisis:
+            return emotional_support.to_response(crisis)
         try:
             if self.tensorflow_ai is None:
                 logger.error("❌ Servicio de TensorFlow no disponible")
@@ -41,15 +60,20 @@ class AIService:
     def _generate_fallback_response(self, message: str) -> Dict[str, Any]:
         """Generar respuesta de respaldo si TensorFlow falla"""
         logger.warning("🔄 Usando respuesta de respaldo")
-        
+
+        support = emotional_support.analyze(message)
+        if support:
+            return emotional_support.to_response(support)
+
         return {
-            "response": "¡Hola! Soy tu psicólogo motivacional personal. 🌟 Estoy aquí para escucharte, apoyarte y ayudarte a descubrir tu mejor versión.\n\nPuedo ayudarte con:\n\n• **Soporte emocional** y bienestar mental\n• **Motivación diaria** y energía positiva\n• **Desarrollo personal** y crecimiento interior\n• **Superación de obstáculos** y resiliencia\n• **Descubrimiento de tu potencial** ilimitado\n• **Consejos de vida** y sabiduría práctica\n• **Acompañamiento psicológico** en tu viaje\n\n¿Cómo te sientes hoy? Cuéntame qué pasa por tu mente.",
+            "response": GREETING_TEXT,
             "intent": "greeting",
             "confidence": 0.5,
-            "sentiment": "positive",
-            "sentiment_confidence": 0.6,
-            "suggestions": ["Me siento bien", "Me siento mal", "Necesito motivación"],
+            "sentiment": "neutral",
+            "sentiment_confidence": 0.5,
+            "suggestions": ["Me siento mal", "Ver mis tareas", "Crear un hábito"],
             "entities": {},
+            "emotion": None,
             "timestamp": datetime.utcnow().isoformat()
         }
     

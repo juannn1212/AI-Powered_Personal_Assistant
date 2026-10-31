@@ -34,24 +34,26 @@ const AnalyticsScreen = () => {
   const loadAnalytics = async () => {
     try {
       setLoading(true);
-      
+      // tz_offset: minutos al este de UTC, para mostrar hora/día pico en hora local
+      const query = `period=${selectedPeriod}&tz_offset=${-new Date().getTimezoneOffset()}`;
+
       const [productivityRes, habitsRes, tasksRes, chatRes, insightsRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/analytics/productivity?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/productivity?${query}`, {
           headers: getAuthHeaders(token),
         }),
-        fetch(`${API_BASE_URL}/analytics/habits?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/habits?${query}`, {
           headers: getAuthHeaders(token),
         }),
-        fetch(`${API_BASE_URL}/analytics/tasks?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/tasks?${query}`, {
           headers: getAuthHeaders(token),
         }),
-        fetch(`${API_BASE_URL}/analytics/chat?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/chat?${query}`, {
           headers: getAuthHeaders(token),
         }),
-        fetch(`${API_BASE_URL}/analytics/insights?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/insights?${query}`, {
           headers: getAuthHeaders(token),
         }),
-        fetch(`${API_BASE_URL}/analytics/summary?period=${selectedPeriod}`, {
+        fetch(`${API_BASE_URL}/analytics/summary?${query}`, {
           headers: getAuthHeaders(token),
         }),
       ]);
@@ -86,7 +88,7 @@ const AnalyticsScreen = () => {
         <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
           <Ionicons name={icon} size={24} color={color} />
         </View>
-        {trend && (
+        {typeof trend === 'number' && trend !== 0 && (
           <View style={[styles.trendContainer, { backgroundColor: trend > 0 ? theme.colors.success + '20' : theme.colors.error + '20' }]}>
             <Ionicons 
               name={trend > 0 ? 'trending-up' : 'trending-down'} 
@@ -202,7 +204,7 @@ const AnalyticsScreen = () => {
             <StatCard
               title="Tareas Completadas"
               value={analytics.summary.tasks_completed || 0}
-              subtitle="de {analytics.summary.total_tasks || 0} totales"
+              subtitle={`de ${analytics.summary.total_tasks || 0} en el periodo`}
               icon="checkmark-circle"
               color={theme.colors.success}
               trend={analytics.summary.tasks_trend}
@@ -210,7 +212,7 @@ const AnalyticsScreen = () => {
             <StatCard
               title="Hábitos Activos"
               value={analytics.summary.habits_active || 0}
-              subtitle="de {analytics.summary.total_habits || 0} totales"
+              subtitle={`de ${analytics.summary.total_habits || 0} totales`}
               icon="repeat"
               color={theme.colors.warning}
               trend={analytics.summary.habits_trend}

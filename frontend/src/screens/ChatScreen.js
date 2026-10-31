@@ -35,12 +35,12 @@ const ChatScreen = ({ navigation }) => {
       {
         id: 'welcome',
         type: 'ai',
-        text: `¡Hola ${user?.full_name || 'Usuario'}! Soy tu psicólogo motivacional personal. ¿Cómo te sientes hoy?`,
+        text: `¡Hola ${user?.full_name || 'Usuario'}! Soy tu asistente de bienestar y productividad: te ayudo con tareas, hábitos y a sobrellevar días pesados. Soy una IA, no un profesional de salud mental ni un servicio de emergencias. ¿Cómo te sientes hoy?`,
         timestamp: new Date().toISOString(),
         suggestions: [
-          'Me siento bien',
-          'Me siento mal',
-          'Necesito motivación'
+          'Me siento estresado',
+          'Ejercicio de respiración',
+          'Ver mis tareas'
         ]
       }
     ]);
