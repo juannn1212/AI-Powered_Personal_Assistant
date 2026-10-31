@@ -232,20 +232,30 @@ async def get_task_stats(
             Task.user_id == current_user.id,
             Task.status == "pending"
         ).count()
+        in_progress_tasks = db.query(Task).filter(
+            Task.user_id == current_user.id,
+            Task.status == "in_progress"
+        ).count()
         overdue_tasks = db.query(Task).filter(
             Task.user_id == current_user.id,
             Task.due_date < date.today(),
             Task.status.in_(["pending", "in_progress"])
         ).count()
-        
+
         completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-        
+
         return {
             "total_tasks": total_tasks,
             "completed_tasks": completed_tasks,
             "pending_tasks": pending_tasks,
+            "in_progress_tasks": in_progress_tasks,
             "overdue_tasks": overdue_tasks,
-            "completion_rate": round(completion_rate, 2)
+            "completion_rate": round(completion_rate, 2),
+            # Nombres cortos que consume la pantalla de tareas
+            "total": total_tasks,
+            "completed": completed_tasks,
+            "pending": pending_tasks,
+            "in_progress": in_progress_tasks,
         }
         
     except Exception as e:

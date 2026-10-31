@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, time, timedelta
 import logging
 
 from app.database import get_db
@@ -15,6 +15,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _streak(days: set, today: date) -> int:
+    """Días consecutivos con registro, contando hacia atrás desde hoy.
+
+    Si hoy todavía no se ha completado, la racha sigue viva desde ayer.
+    """
+    if not days:
+        return 0
+    cursor = today if today in days else today - timedelta(days=1)
+    streak = 0
+    while cursor in days:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
+
+
+def _to_response(habit: Habit) -> HabitResponse:
+    """Convierte un hábito en su respuesta, con racha y última vez completado."""
+    today = datetime.utcnow().date()
+    completed = [log.completed_at for log in habit.habit_logs if log.completed_at]
+    days = {c.date() for c in completed}
+    return HabitResponse.model_validate(habit).model_copy(update={
+        "last_completed": max(completed) if completed else None,
+        "streak": _streak(days, today),
+        "completed_today": today in days,
+    })
 
 @router.post("/", response_model=HabitResponse)
 async def create_habit(
@@ -37,8 +64,8 @@ async def create_habit(
         db.add(db_habit)
         db.commit()
         db.refresh(db_habit)
-        
-        return HabitResponse.model_validate(db_habit)
+
+        return _to_response(db_habit)
         
     except Exception as e:
         logger.error(f"Error creating habit: {str(e)}")
@@ -64,7 +91,7 @@ async def get_habits(
             query = query.filter(Habit.frequency == frequency)
         
         habits = query.order_by(Habit.created_at.desc()).all()
-        return [HabitResponse.model_validate(habit) for habit in habits]
+        return [_to_response(habit) for habit in habits]
         
     except Exception as e:
         logger.error(f"Error getting habits: {str(e)}")
@@ -215,6 +242,50 @@ async def log_habit_completion(
             detail="Error interno del servidor"
         )
 
+@router.post("/{habit_id}/toggle", response_model=HabitResponse)
+async def toggle_habit_today(
+    habit_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Marca o desmarca el hábito como completado hoy"""
+    try:
+        habit = db.query(Habit).filter(
+            Habit.id == habit_id,
+            Habit.user_id == current_user.id
+        ).first()
+
+        if not habit:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hábito no encontrado"
+            )
+
+        start_of_day = datetime.combine(datetime.utcnow().date(), time.min)
+        todays_logs = db.query(HabitLog).filter(
+            HabitLog.habit_id == habit_id,
+            HabitLog.completed_at >= start_of_day
+        ).all()
+
+        if todays_logs:
+            for log in todays_logs:
+                db.delete(log)
+        else:
+            db.add(HabitLog(habit_id=habit_id, completed_at=datetime.utcnow()))
+
+        db.commit()
+        db.refresh(habit)
+        return _to_response(habit)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling habit: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor"
+        )
+
 @router.get("/{habit_id}/logs")
 async def get_habit_logs(
     habit_id: int,
@@ -263,44 +334,23 @@ async def get_habit_stats(
 ):
     """Obtener estadísticas de hábitos"""
     try:
-        total_habits = db.query(Habit).filter(Habit.user_id == current_user.id).count()
-        active_habits = db.query(Habit).filter(
-            Habit.user_id == current_user.id,
-            Habit.is_active == True
-        ).count()
-        
-        # Calcular hábitos completados hoy
-        today = date.today()
-        today_logs = db.query(HabitLog).join(Habit).filter(
-            Habit.user_id == current_user.id,
-            HabitLog.completed_at >= today
-        ).count()
-        
-        # Calcular racha más larga
-        all_logs = db.query(HabitLog).join(Habit).filter(
-            Habit.user_id == current_user.id
-        ).order_by(HabitLog.completed_at).all()
-        
-        max_streak = 0
-        current_streak = 0
-        last_date = None
-        
-        for log in all_logs:
-            log_date = log.completed_at.date()
-            if last_date is None or (log_date - last_date).days == 1:
-                current_streak += 1
-            else:
-                current_streak = 1
-            
-            max_streak = max(max_streak, current_streak)
-            last_date = log_date
-        
+        habits = db.query(Habit).filter(Habit.user_id == current_user.id).all()
+        items = [_to_response(h) for h in habits]
+        streaks = [h.streak for h in items]
+
+        total = len(items)
+        active = sum(1 for h in items if h.is_active)
+        completed_today = sum(1 for h in items if h.completed_today)
+
         return {
-            "total_habits": total_habits,
-            "active_habits": active_habits,
-            "completed_today": today_logs,
-            "max_streak": max_streak,
-            "current_streak": current_streak
+            "total": total,
+            "active": active,
+            "completed_today": completed_today,
+            "streak_average": round(sum(streaks) / total, 1) if total else 0,
+            "max_streak": max(streaks, default=0),
+            # Alias por compatibilidad con pantallas que usan los nombres largos
+            "total_habits": total,
+            "active_habits": active,
         }
         
     except Exception as e:

@@ -31,6 +31,10 @@ class HabitResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    # Campos calculados a partir de los registros (logs) del hábito
+    last_completed: Optional[datetime] = None
+    streak: int = 0
+    completed_today: bool = False
 
     class Config:
         from_attributes = True

@@ -36,7 +36,7 @@ export const TasksProvider = ({ children }) => {
   const loadTasks = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/tasks`, {
+      const response = await fetch(`${API_BASE_URL}/tasks/`, {
         headers: getAuthHeaders()
       });
 
@@ -104,7 +104,7 @@ export const TasksProvider = ({ children }) => {
   const addTask = async (taskData) => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/tasks`, {
+      const response = await fetch(`${API_BASE_URL}/tasks/`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(taskData)

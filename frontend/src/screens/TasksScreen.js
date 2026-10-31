@@ -517,6 +517,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   filtersContainer: {
+    flexGrow: 0,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },

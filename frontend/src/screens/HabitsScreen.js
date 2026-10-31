@@ -48,7 +48,7 @@ const HabitsScreen = () => {
   const loadHabits = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/habits`, {
+      const response = await fetch(`${API_BASE_URL}/habits/`, {
         headers: getAuthHeaders(token),
       });
 
@@ -57,7 +57,7 @@ const HabitsScreen = () => {
       }
 
       const data = await response.json();
-      setHabits(data.habits || []);
+      setHabits(Array.isArray(data) ? data : (data.habits || []));
     } catch (error) {
       console.error('Error loading habits:', error);
       Alert.alert('Error', 'No se pudieron cargar los hábitos');
@@ -88,7 +88,7 @@ const HabitsScreen = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/habits`, {
+      const response = await fetch(`${API_BASE_URL}/habits/`, {
         method: 'POST',
         headers: getAuthHeaders(token),
         body: JSON.stringify({
@@ -106,7 +106,7 @@ const HabitsScreen = () => {
       }
 
       const data = await response.json();
-      setHabits(prev => [data.habit, ...prev]);
+      setHabits(prev => [data.habit || data, ...prev]);
       setShowAddModal(false);
       setNewHabit({ name: '', description: '', frequency: 'daily', time_of_day: 'flexible', category: '', motivation_tip: '' });
       loadStats();
@@ -624,6 +624,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   filtersContainer: {
+    flexGrow: 0,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
   },
