@@ -28,9 +28,10 @@ LLM local (Qwen3 / Gemma 3 / Llama 3.x / Phi-4-mini; verificar licencia y probar
 - Commits pequeños y en ramas `feat/…` / `fix/…`; no commitear artefactos generados (`backend/ai_model/`, `*.pkl`, `*.db` están ignorados).
 - Correr `pytest` antes de cada commit.
 - Backend dev: `cd backend && uvicorn main:app --reload`. Frontend: `cd frontend && npx expo start --web`.
+- Docker (PostgreSQL + pgvector + backend): copiar `.env.example` a `.env`, rellenar `POSTGRES_PASSWORD` y `SECRET_KEY`, y `docker compose up -d --build`. Si el 8000 está ocupado, `BACKEND_PORT` en `.env`. Los tests siguen usando SQLite.
 
 ## Pendientes conocidos
 - `ChatScreen`: renderizar visualmente el mensaje de crisis (tarjeta con botón a Línea 106).
-- Dockerfile / docker-compose y CI (GitHub Actions con pytest).
+- CI (GitHub Actions con pytest).
 - Migraciones con Alembic (hoy `create_all`); `SECRET_KEY` por defecto es insegura fuera de desarrollo.
 - Reemplazar `ml_models/*.pkl` y el clasificador por la arquitectura del roadmap.
