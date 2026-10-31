@@ -7,15 +7,15 @@ from dotenv import load_dotenv
 import os
 
 from app.routes import auth, assistant, calendar, analytics, tasks, habits
-from app.database import engine, Base
+from app.db_migrate import run_migrations
 from app.config import settings
 from app.models import User, Task, Habit, HabitLog
 
 # Load environment variables
 load_dotenv()
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Aplica las migraciones de Alembic (el esquema ya no se crea con create_all)
+run_migrations()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -29,9 +29,10 @@ LLM local (Qwen3 / Gemma 3 / Llama 3.x / Phi-4-mini; verificar licencia y probar
 - Correr `pytest` antes de cada commit.
 - Backend dev: `cd backend && uvicorn main:app --reload`. Frontend: `cd frontend && npx expo start --web`.
 - Docker (PostgreSQL + pgvector + backend): copiar `.env.example` a `.env`, rellenar `POSTGRES_PASSWORD` y `SECRET_KEY`, y `docker compose up -d --build`. Si el 8000 está ocupado, `BACKEND_PORT` en `.env`. Los tests siguen usando SQLite.
+- Migraciones (Alembic, en `backend/migrations/`): la app aplica `upgrade head` al arrancar (`app/db_migrate.py`); una base antigua creada con `create_all` se adopta sola. Al cambiar un modelo: `cd backend && alembic revision --autogenerate -m "..."` (contra PostgreSQL) y revisar el archivo. `tests/test_migrations.py` falla si los modelos y las migraciones divergen.
 
 ## Pendientes conocidos
 - `ChatScreen`: renderizar visualmente el mensaje de crisis (tarjeta con botón a Línea 106).
 - CI (GitHub Actions con pytest).
-- Migraciones con Alembic (hoy `create_all`); `SECRET_KEY` por defecto es insegura fuera de desarrollo.
+- `SECRET_KEY` por defecto es insegura fuera de desarrollo (y hay dos defaults distintos: `config.py` y `auth_service.py`).
 - Reemplazar `ml_models/*.pkl` y el clasificador por la arquitectura del roadmap.
